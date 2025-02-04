@@ -185,8 +185,8 @@ class Bot {
     this.#helpDesk = new HelpDesk({
       membersLimit:   100,
       trigger:  "!ask",
-      freshdeskApiKey: config.freshdeskApiKey || 'mYeVG9J9AsAkVWeXqRQz',
-      freshdeskDomain: config.freshdeskDomain || 'geeked',
+      freshdeskApiKey: config.freshdeskApiKey || '42dovPFdB2phlq3a3Hw',
+      freshdeskDomain: config.freshdeskDomain || 'geeky-help',
       threadsDB: config.threadsDB || "threads.json"
     });
   }

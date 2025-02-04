@@ -1,8 +1,6 @@
 const axios = require('axios');
 const fs = require('fs');
 const cheerio = require('cheerio');
-const { downloadMediaMessage } = require("@whiskeysockets/baileys");
-const FormData = require("form-data");
 
 class HelpDesk {
     #socket;
@@ -92,71 +90,58 @@ class HelpDesk {
         }
     }
 
-    async #createFreshdeskTicket(user, message, imageBuffer, imageMimeType) {
+    async #createFreshdeskTicket(user, message) {
         const url = `https://${this.#freshdeskConfig.domain}.freshdesk.com/api/v2/tickets`;
-
-        const formData = new FormData();
-        formData.append("subject", `Query from ${user.name || user.number}`);
-        formData.append("description", message);
-        formData.append("email", `${user.number}@whatsapp.com`);
-        formData.append("priority", 1);
-        formData.append("status", 2);
-        formData.append("source", 3); // WhatsApp
-
-        if (imageBuffer && imageMimeType) {
-            // Create a Blob from the image buffer
-            const blob = new Blob([imageBuffer], { type: imageMimeType });
-            formData.append("attachments[]", blob, "image.jpg"); // Or use a more descriptive filename
-        }
+        const data = {
+            subject: `Query from ${user.name || user.number}`,
+            description: message,
+            email: `${user.number}@whatsapp.com`,
+            priority: 1,
+            status: 2,
+            source: 3 // WhatsApp
+        };
 
         try {
-            const response = await axios.post(url, formData, {
+            const response = await axios.post(url, data, {
                 auth: {
                     username: this.#freshdeskConfig.apiKey,
-                    password: "X",
+                    password: 'X'
                 },
-                // Do NOT set Content-Type manually when using FormData
-                // axios automatically sets the correct Content-Type
+                headers: {
+                    'Content-Type': 'application/json'
+                }
             });
-
-            console.log("Ticket created:", response.data.id);
+            console.log('Ticket created:', response.data.id);
             return response.data.id;
-
         } catch (error) {
-            console.error("Error creating ticket:", error.response?.data || error);
-            await this.#sendMessage(user.number + "@s.whatsapp.net", {
-                text: "❌ Sorry, we couldn't create your support ticket. Please try again later.",
+            console.error('Error creating ticket:', error.response?.data || error);
+            await this.#sendMessage(user.number + '@s.whatsapp.net', {
+                text: '❌ Sorry, we couldn\'t create your support ticket. Please try again later.'
             });
             return null;
         }
     }
 
-    async #updateFreshdeskTicket(ticketId, message, imageBuffer, imageMimeType) {
-        const url = `https://${this.#freshdeskConfig.domain}.freshdesk.com/api/v2/tickets/${ticketId}/reply`;
-
-        const formData = new FormData();
-        formData.append("body", message);
-
-        if (imageBuffer && imageMimeType) {
-            formData.append("attachments[]", imageBuffer, {
-                filename: `attachment.${imageMimeType.split("/")[1]}`,
-                contentType: imageMimeType,
-            });
-        }
+    async #updateFreshdeskTicket(ticketId, message) {
+        const url = `https://${this.#freshdeskConfig.domain}.freshdesk.com/api/v2/tickets/${ticketId}/notes`;
+        const data = {
+            body: message,
+            private: false
+        };
 
         try {
-            const response = await axios.post(url, formData, {
+            await axios.post(url, data, {
                 auth: {
                     username: this.#freshdeskConfig.apiKey,
-                    password: "X",
+                    password: 'X'
                 },
                 headers: {
-                    ...formData.getHeaders(),
-                },
+                    'Content-Type': 'application/json'
+                }
             });
-            return response.status === 200;
+            return true;
         } catch (error) {
-            console.error("Error updating ticket:", error.response?.data || error);
+            console.error('Error updating ticket:', error.response?.data || error);
             return false;
         }
     }
@@ -216,31 +201,9 @@ class HelpDesk {
                 return;
             }
 
-            const isImage = !!msg.message?.imageMessage;
-            const isVideo = !!msg.message?.videoMessage;
-            const isDocument = !!msg.message?.documentMessage;
-
-            let imageUrl = null;
-            let imageMimeType = null;
-
-            if (isImage || isVideo || isDocument) {
-                try {
-                    imageUrl = await downloadMediaMessage(msg, "buffer", {});
-                    imageMimeType = isImage
-                        ? msg.message.imageMessage.mimetype
-                        : isVideo
-                            ? msg.message.videoMessage.mimetype
-                            : msg.message.documentMessage.mimetype;
-                } catch (error) {
-                    console.error("Error downloading media:", error);
-                    imageUrl = null;
-                    imageMimeType = null;
-                }
-            }
-
             // Create or update ticket
             if (!this.#threads[userNumber]) {
-                const ticketId = await this.#createFreshdeskTicket({ number: userNumber }, cleanMessage, imageUrl, imageMimeType);
+                const ticketId = await this.#createFreshdeskTicket({ number: userNumber }, cleanMessage);
                 if (ticketId) {
                     this.#threads[userNumber] = {
                         ticketId: ticketId,
@@ -253,7 +216,7 @@ class HelpDesk {
                     });
                 }
             } else {
-                const updated = await this.#updateFreshdeskTicket(this.#threads[userNumber].ticketId, cleanMessage, imageUrl, imageMimeType);
+                const updated = await this.#updateFreshdeskTicket(this.#threads[userNumber].ticketId, cleanMessage);
                 if (updated) {
 
                     this.#threads[userNumber].originalQuestion = cleanMessage;
