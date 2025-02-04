@@ -1,6 +1,8 @@
 const axios = require('axios');
 const fs = require('fs');
 const cheerio = require('cheerio');
+const { downloadMediaMessage } = require("@whiskeysockets/baileys");
+const FormData = require("form-data");
 
 class HelpDesk {
     #socket;
@@ -11,8 +13,8 @@ class HelpDesk {
     #freshdeskConfig;
     #threadsDB;
     #threads;
-    #lastProcessedUpdatesDB; // File to store last processed updates
-    #lastProcessedUpdates; // In-memory store for last processed updates
+    #lastProcessedUpdatesDB;
+    #lastProcessedUpdates;
     #predefinedResponses = {
         'hi': 'Hello! 👋 Welcome to our support. How can we assist you today?',
         'hello': 'Hi there! 👋 Welcome to our support. How can we assist you today?',
@@ -26,21 +28,21 @@ class HelpDesk {
 
     constructor(config = {}) {
         this.#membersLimit = config.membersLimit || 100;
-        this.#trigger = config.trigger;
+        this.#trigger = config.trigger || '!ask';
         this.#freshdeskConfig = {
             apiKey: process.env.FRESHDESK_API_KEY || config.freshdeskApiKey,
             domain: process.env.FRESHDESK_DOMAIN || config.freshdeskDomain
         };
         this.#threadsDB = config.threadsDB || 'threads.json';
-        this.#lastProcessedUpdatesDB = config.lastProcessedUpdatesDB || 'lastProcessedUpdates.json'; // New file for last processed updates
+        this.#lastProcessedUpdatesDB = config.lastProcessedUpdatesDB || 'lastProcessedUpdates.json';
         this.#loadThreads();
-        this.#loadLastProcessedUpdates(); // Load last processed updates on initialization
+        this.#loadLastProcessedUpdates();
     }
 
     #loadLastProcessedUpdates() {
         try {
             this.#lastProcessedUpdates = fs.existsSync(this.#lastProcessedUpdatesDB)
-                ? JSON.parse(fs.readFileSync(this.#lastProcessedUpdatesDB))
+                ? JSON.parse(fs.readFileSync(this.#lastProcessedUpdatesDB, 'utf8'))
                 : {};
         } catch (error) {
             console.error('Error loading last processed updates:', error);
@@ -50,7 +52,7 @@ class HelpDesk {
 
     #saveLastProcessedUpdates() {
         try {
-            fs.writeFileSync(this.#lastProcessedUpdatesDB, JSON.stringify(this.#lastProcessedUpdates, null, 2));
+            fs.writeFileSync(this.#lastProcessedUpdatesDB, JSON.stringify(this.#lastProcessedUpdates, null, 2), 'utf8');
         } catch (error) {
             console.error('Error saving last processed updates:', error);
         }
@@ -74,7 +76,7 @@ class HelpDesk {
     #loadThreads() {
         try {
             this.#threads = fs.existsSync(this.#threadsDB)
-                ? JSON.parse(fs.readFileSync(this.#threadsDB))
+                ? JSON.parse(fs.readFileSync(this.#threadsDB, 'utf8'))
                 : {};
         } catch (error) {
             console.error('Error loading threads:', error);
@@ -84,17 +86,38 @@ class HelpDesk {
 
     #saveThreads() {
         try {
-            fs.writeFileSync(this.#threadsDB, JSON.stringify(this.#threads, null, 2));
+            fs.writeFileSync(this.#threadsDB, JSON.stringify(this.#threads, null, 2), 'utf8');
         } catch (error) {
             console.error('Error saving threads:', error);
         }
     }
 
-    async #createFreshdeskTicket(user, message) {
+    async #uploadImageToHostingService(imageBuffer, imageMimeType) {
+        // Replace this with your preferred image hosting service API
+        // Example: ImgBB (https://api.imgbb.com/)
+        const apiKey = '3f4dabd545377c23ac9b61f9cd605d0a'; // Replace with your ImgBB API key
+        const formData = new FormData();
+        formData.append('image', imageBuffer.toString('base64'));
+
+        try {
+            const response = await axios.post(`https://api.imgbb.com/1/upload?key=${apiKey}`, formData, {
+                headers: {
+                    ...formData.getHeaders(),
+                },
+            });
+            return response.data.data.url; // Return the public URL of the uploaded image
+        } catch (error) {
+            console.error('Error uploading image:', error.response?.data || error);
+            return null;
+        }
+    }
+
+    async #createFreshdeskTicket(user, message, imageUrl) {
         const url = `https://${this.#freshdeskConfig.domain}.freshdesk.com/api/v2/tickets`;
+
         const data = {
             subject: `Query from ${user.name || user.number}`,
-            description: message,
+            description: imageUrl ? `${message}\n\nAttached Image: ${imageUrl}` : message,
             email: `${user.number}@whatsapp.com`,
             priority: 1,
             status: 2,
@@ -122,10 +145,11 @@ class HelpDesk {
         }
     }
 
-    async #updateFreshdeskTicket(ticketId, message) {
+    async #updateFreshdeskTicket(ticketId, message, imageUrl) {
         const url = `https://${this.#freshdeskConfig.domain}.freshdesk.com/api/v2/tickets/${ticketId}/notes`;
+
         const data = {
-            body: message,
+            body: imageUrl ? `${message}\n\nAttached Image: ${imageUrl}` : message,
             private: false
         };
 
@@ -180,64 +204,87 @@ class HelpDesk {
 
     async handleMessage(bot, msg, sender, jid) {
         try {
-            const userNumber = sender.split('@')[0];
-
-            const messageText = msg.message.conversation ||
+            const userNumber = sender.split("@")[0];
+            const messageText =
+                msg.message.conversation ||
                 msg.message.extendedTextMessage?.text ||
                 msg.message?.imageMessage?.caption ||
                 msg.message?.videoMessage?.caption ||
                 "";
 
-            // Remove the !ask prefix and trim the message
-            const cleanMessage = messageText.slice(4).trim().toLowerCase();
+            const cleanMessage = messageText.slice(this.#trigger.length).trim();
 
-            // Check for predefined response
+            // Check for predefined responses first
             const predefinedResponse = this.#checkPredefinedResponse(cleanMessage);
-
             if (predefinedResponse) {
-                await this.#sendMessage(jid, {
-                    text: predefinedResponse
-                });
+                await this.#sendMessage(jid, { text: predefinedResponse });
                 return;
             }
 
+            // Check if message starts with trigger
+
+
+
+
+            // Handle attachments
+            let imageUrl = null;
+
+            if (msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.documentMessage) {
+                try {
+                    const imageBuffer = await downloadMediaMessage(msg, "buffer", {});
+                    const imageMimeType =
+                        msg.message.imageMessage?.mimetype ||
+                        msg.message.videoMessage?.mimetype ||
+                        msg.message.documentMessage?.mimetype;
+
+                    // Upload image to hosting service
+                    imageUrl = await this.#uploadImageToHostingService(imageBuffer, imageMimeType);
+                } catch (error) {
+                    console.error("Error downloading or uploading media:", error);
+                }
+            }
+
+            const fmsg = imageUrl ? `${cleanMessage}\n\nAttached Image: ${imageUrl}` : cleanMessage;
+            console.log(fmsg);
+
             // Create or update ticket
             if (!this.#threads[userNumber]) {
-                const ticketId = await this.#createFreshdeskTicket({ number: userNumber }, cleanMessage);
+                const ticketId = await this.#createFreshdeskTicket(
+                    { number: userNumber },
+                    cleanMessage,
+                    imageUrl
+                );
                 if (ticketId) {
                     this.#threads[userNumber] = {
                         ticketId: ticketId,
-                        originalQuestion: cleanMessage,
+                        originalQuestion: fmsg,
                         jid: jid
                     };
                     this.#saveThreads();
                     await this.#sendMessage(sender, {
-                        text: '✅ Your support ticket has been created. We\'ll get back to you soon!'
+                        text: "✅ Your support ticket has been created. We'll get back to you soon!",
                     });
                 }
             } else {
-                const updated = await this.#updateFreshdeskTicket(this.#threads[userNumber].ticketId, cleanMessage);
+                const updated = await this.#updateFreshdeskTicket(
+                    this.#threads[userNumber].ticketId,
+                    cleanMessage,
+                    imageUrl
+                );
                 if (updated) {
-
-                    this.#threads[userNumber].originalQuestion = cleanMessage;
+                    this.#threads[userNumber].originalQuestion = fmsg;
                     this.#threads[userNumber].jid = jid;
                     this.#saveThreads();
-
                     await this.#sendMessage(sender, {
-                        text: '✅ Your message has been added to the support ticket.'
+                        text: "✅ Your message has been added to the support ticket.",
                     });
                 }
             }
         } catch (error) {
-            console.error('Error handling message:', error);
-            await this.#sendMessage(sender, {
-                text: '❌ An error occurred. Please try again later.'
-            });
+            console.error("Error handling message:", error);
+            await this.#sendMessage(sender, { text: "❌ An error occurred. Please try again later." });
         }
     }
-
-
-
 
     async checkFreshdeskReplies(bot) {
         for (const userNumber in this.#threads) {
@@ -281,19 +328,12 @@ class HelpDesk {
                     };
 
                     // Send to message
-                    if(jid.includes('@g.us')) {
+                    if (jid.includes('@g.us')) {
                         await this.#sendMessage(jid, formattedMessage);
-
-                        await this.#sendMessage(userJid, {
-                            text: plainText
-                        });
+                        await this.#sendMessage(userJid, { text: plainText });
                     } else {
-                        await this.#sendMessage(jid, {
-                            text: plainText
-                        });
+                        await this.#sendMessage(jid, { text: plainText });
                     }
-
-
 
                     // Update last processed update for this user
                     this.#lastProcessedUpdates[userNumber] = updateId;
