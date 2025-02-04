@@ -17,13 +17,6 @@ class HelpDesk {
     #lastProcessedUpdates;
     #predefinedResponses = {
         'hi': 'Hello! 👋 Welcome to our support. How can we assist you today?',
-        'hello': 'Hi there! 👋 Welcome to our support. How can we assist you today?',
-        'hey': 'Hi! 👋 Welcome to our support. How can we assist you today?',
-        'help': 'I can help you with:\n- Product inquiries\n- Technical support\n- Billing questions\n\nJust type !ask followed by your question!',
-        'status': 'Our services are currently operational. If you\'re experiencing issues, please describe them in detail.',
-        'pricing': 'Our pricing plans are customized based on your needs. A sales representative will contact you shortly.',
-        'support': 'You\'re already in the support chat! Please describe your issue, and we\'ll assist you right away.',
-        'contact': 'You can reach us through:\n- This chat support\n- Email: support@example.com\n- Phone: +1234567890',
     };
 
     constructor(config = {}) {
