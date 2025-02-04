@@ -1,4 +1,22 @@
 {
-  "918700739666": 1,
-  "919315556844": 2
+  "918700739666": {
+    "ticketId": 1,
+    "originalQuestion": "hi",
+    "jid": "120363396560821263@g.us"
+  },
+  "919315556844": {
+    "ticketId": 2,
+    "originalQuestion": "what's the time",
+    "jid": "120363396560821263@g.us"
+  },
+  "919960412666": {
+    "ticketId": 3,
+    "originalQuestion": "!ask what i sthe vacuum suction power of the machine?",
+    "jid": "120363395343281097@g.us"
+  },
+  "919313080550": {
+    "ticketId": 4,
+    "originalQuestion": "!ask",
+    "jid": "120363395343281097@g.us"
+  }
 }

@@ -260,9 +260,9 @@ class Bot {
 
     // Check Freshdesk Replies Every 2 Minutes
     setInterval(async () => {
-      const groupChatId = process.env.GROUP_CHAT_ID || "120363395343281097@g.us"; // Better to use environment variable
-      await this.#helpDesk.checkFreshdeskReplies(this.#socket, groupChatId);
-    },  60 * 1000); //60 sec
+       // Better to use environment variable
+      await this.#helpDesk.checkFreshdeskReplies(this.#socket);
+    },  20 * 1000); //10 sec
   }
 
   async #restart() {

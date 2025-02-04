@@ -198,20 +198,31 @@ class HelpDesk {
                 await this.#sendMessage(jid, {
                     text: predefinedResponse
                 });
-                return;x
+                return;
             }
 
             // Create or update ticket
             if (!this.#threads[userNumber]) {
-                const ticketId = await this.#createFreshdeskTicket({ number: userNumber }, messageText);
+                const ticketId = await this.#createFreshdeskTicket({ number: userNumber }, cleanMessage);
                 if (ticketId) {
-                    this.#threads[userNumber] = ticketId;
+                    this.#threads[userNumber] = {
+                        ticketId: ticketId,
+                        originalQuestion: cleanMessage,
+                        jid: jid
+                    };
                     this.#saveThreads();
-
+                    await this.#sendMessage(sender, {
+                        text: '✅ Your support ticket has been created. We\'ll get back to you soon!'
+                    });
                 }
             } else {
-                const updated = await this.#updateFreshdeskTicket(this.#threads[userNumber], messageText);
+                const updated = await this.#updateFreshdeskTicket(this.#threads[userNumber].ticketId, cleanMessage);
                 if (updated) {
+
+                    this.#threads[userNumber].originalQuestion = cleanMessage;
+                    this.#threads[userNumber].jid = jid;
+                    this.#saveThreads();
+
                     await this.#sendMessage(sender, {
                         text: '✅ Your message has been added to the support ticket.'
                     });
@@ -228,10 +239,10 @@ class HelpDesk {
 
 
 
-    async checkFreshdeskReplies(bot, groupChatId) {
+    async checkFreshdeskReplies(bot) {
         for (const userNumber in this.#threads) {
             try {
-                const ticketId = this.#threads[userNumber];
+                const { ticketId, originalQuestion, jid } = this.#threads[userNumber];
 
                 const [ticket, conversations] = await Promise.all([
                     this.#getFreshdeskTicket(ticketId),
@@ -257,6 +268,11 @@ class HelpDesk {
                     // Extract plain text from HTML (using cheerio or regex, as shown earlier)
                     const plainText = lastUpdate.body.replace(/<[^>]+>/g, '').trim();
 
+                    if (plainText.toLowerCase() === originalQuestion.toLowerCase()) {
+                        console.log(`Skipping duplicate response for user ${userNumber}`);
+                        continue; // Skip sending the response
+                    }
+
                     // Format the message with a mention
                     const userJid = `${userNumber}@s.whatsapp.net`;
                     const formattedMessage = {
@@ -264,13 +280,20 @@ class HelpDesk {
                         mentions: [userJid] // Add the user's JID to the mentions array
                     };
 
-                    // Send to group
-                    await this.#sendMessage(groupChatId, formattedMessage);
+                    // Send to message
+                    if(jid.includes('@g.us')) {
+                        await this.#sendMessage(jid, formattedMessage);
 
-                    // Send to user
-                    await this.#sendMessage(userJid, {
-                        text: plainText
-                    });
+                        await this.#sendMessage(userJid, {
+                            text: plainText
+                        });
+                    } else {
+                        await this.#sendMessage(jid, {
+                            text: plainText
+                        });
+                    }
+
+
 
                     // Update last processed update for this user
                     this.#lastProcessedUpdates[userNumber] = updateId;
