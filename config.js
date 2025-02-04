@@ -15,8 +15,8 @@ const botConfig = {
       trigger: "TagAll",
     },
       helpdesk:{
-          freshdeskApiKey: '42dovPFdB2phlq3a3Hw',
-          freshdeskDomain: 'geeky-help',
+          freshdeskApiKey: 'mYeVG9J9AsAkVWeXqRQz',
+          freshdeskDomain: 'geeked',
       },
     warner:{
       membersLimit: 1000,
