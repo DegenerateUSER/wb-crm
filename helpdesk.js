@@ -37,7 +37,7 @@ class HelpDesk {
         this.#loadLastProcessedUpdates();
 
         // Initialize Azure Blob Storage client
-        this.#azureConnectionString = "DefaultEndpointsProtocol=https;AccountName=testingedg;AccountKey=iI4EcWbT8UjF8dlGkkiBOLABU1GndwqzFJuOV3hJmIRd7BNbx8Cqm56oyiFs/RcKLPjbmqWlXGC9+ASt9a3sYg==;EndpointSuffix=core.windows.net" || config.azureConnectionString;
+        this.#azureConnectionString = config.azureConnectionString;
         this.#azureContainerName = config.azureContainerName || 'media-uploads';
         this.#blobServiceClient = BlobServiceClient.fromConnectionString(this.#azureConnectionString);
         this.#loadLastProcessedUpdates();
