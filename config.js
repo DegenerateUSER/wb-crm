@@ -15,8 +15,8 @@ const botConfig = {
       trigger: "TagAll",
     },
       helpdesk:{
-          freshdeskApiKey: 'YD2wjGoH5Iu2XbR1WtC',
-          freshdeskDomain: 'brsgsc',
+          freshdeskApiKey: 'DWScglJjwy45DnZ8chd',
+          freshdeskDomain: 'gayroom',
       },
     warner:{
       membersLimit: 1000,

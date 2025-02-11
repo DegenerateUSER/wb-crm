@@ -1,7 +1,8 @@
-const axios = require('axios');
-const fs = require('fs');
-const cheerio = require('cheerio');
+const { BlobServiceClient } = require('@azure/storage-blob');
 const { downloadMediaMessage } = require("@whiskeysockets/baileys");
+const fs = require('fs');
+const axios = require('axios');
+const cheerio = require('cheerio');
 const FormData = require("form-data");
 
 class HelpDesk {
@@ -15,9 +16,13 @@ class HelpDesk {
     #threads;
     #lastProcessedUpdatesDB;
     #lastProcessedUpdates;
+    #azureConnectionString;
+    #azureContainerName;
+    #blobServiceClient;
     #predefinedResponses = {
         'hi': 'Hello! 👋 Welcome to our support. How can we assist you today?',
     };
+
 
     constructor(config = {}) {
         this.#membersLimit = config.membersLimit || 100;
@@ -29,6 +34,12 @@ class HelpDesk {
         this.#threadsDB = config.threadsDB || 'threads.json';
         this.#lastProcessedUpdatesDB = config.lastProcessedUpdatesDB || 'lastProcessedUpdates.json';
         this.#loadThreads();
+        this.#loadLastProcessedUpdates();
+
+        // Initialize Azure Blob Storage client
+        this.#azureConnectionString = "DefaultEndpointsProtocol=https;AccountName=testingedg;AccountKey=iI4EcWbT8UjF8dlGkkiBOLABU1GndwqzFJuOV3hJmIRd7BNbx8Cqm56oyiFs/RcKLPjbmqWlXGC9+ASt9a3sYg==;EndpointSuffix=core.windows.net" || config.azureConnectionString;
+        this.#azureContainerName = config.azureContainerName || 'media-uploads';
+        this.#blobServiceClient = BlobServiceClient.fromConnectionString(this.#azureConnectionString);
         this.#loadLastProcessedUpdates();
     }
 
@@ -85,32 +96,30 @@ class HelpDesk {
         }
     }
 
-    async #uploadImageToHostingService(imageBuffer, imageMimeType) {
-        // Replace this with your preferred image hosting service API
-        // Example: ImgBB (https://api.imgbb.com/)
-        const apiKey = '3f4dabd545377c23ac9b61f9cd605d0a'; // Replace with your ImgBB API key
-        const formData = new FormData();
-        formData.append('image', imageBuffer.toString('base64'));
-
+    async #uploadMediaToAzure(mediaBuffer, mediaMimeType, mediaName) {
         try {
-            const response = await axios.post(`https://api.imgbb.com/1/upload?key=${apiKey}`, formData, {
-                headers: {
-                    ...formData.getHeaders(),
-                },
+            const containerClient = this.#blobServiceClient.getContainerClient(this.#azureContainerName);
+            const blobClient = containerClient.getBlockBlobClient(mediaName);
+
+            // Upload the media file
+            await blobClient.uploadData(mediaBuffer, {
+                blobHTTPHeaders: { blobContentType: mediaMimeType }
             });
-            return response.data.data.url; // Return the public URL of the uploaded image
+
+            // Generate a public URL for the uploaded file
+            return blobClient.url;
         } catch (error) {
-            console.error('Error uploading image:', error.response?.data || error);
+            console.error('Error uploading media to Azure Blob Storage:', error);
             return null;
         }
     }
 
-    async #createFreshdeskTicket(user, message, imageUrl) {
+    async #createFreshdeskTicket(user, message, mediaUrl) {
         const url = `https://${this.#freshdeskConfig.domain}.freshdesk.com/api/v2/tickets`;
 
         const data = {
             subject: `Query from ${user.name || user.number}`,
-            description: imageUrl ? `${message}\n\nAttached Image: ${imageUrl}` : message,
+            description: mediaUrl ? `${message}\n\nAttached Media: ${mediaUrl}` : message,
             email: `${user.number}@whatsapp.com`,
             priority: 1,
             status: 2,
@@ -138,11 +147,11 @@ class HelpDesk {
         }
     }
 
-    async #updateFreshdeskTicket(ticketId, message, imageUrl) {
+    async #updateFreshdeskTicket(ticketId, message, mediaUrl) {
         const url = `https://${this.#freshdeskConfig.domain}.freshdesk.com/api/v2/tickets/${ticketId}/notes`;
 
         const data = {
-            body: imageUrl ? `${message}\n\nAttached Image: ${imageUrl}` : message,
+            body: mediaUrl ? `${message}\n\nAttached Media: ${mediaUrl}` : message,
             private: false
         };
 
@@ -214,44 +223,47 @@ class HelpDesk {
                 return;
             }
 
-            // Check if message starts with trigger
-
-
-
-
             // Handle attachments
-            let imageUrl = null;
+            let mediaUrl = null;
 
             if (msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.documentMessage) {
                 try {
-                    const imageBuffer = await downloadMediaMessage(msg, "buffer", {});
-                    const imageMimeType =
+                    const mediaBuffer = await downloadMediaMessage(msg, "buffer", {});
+                    const mediaMimeType =
                         msg.message.imageMessage?.mimetype ||
                         msg.message.videoMessage?.mimetype ||
                         msg.message.documentMessage?.mimetype;
 
-                    // Upload image to hosting service
-                    imageUrl = await this.#uploadImageToHostingService(imageBuffer, imageMimeType);
+                    const mediaName = `media_${Date.now()}.${mediaMimeType.split('/')[1]}`;
+
+                    // Upload media to Azure Blob Storage
+                    mediaUrl = await this.#uploadMediaToAzure(mediaBuffer, mediaMimeType, mediaName);
                 } catch (error) {
                     console.error("Error downloading or uploading media:", error);
                 }
             }
 
-            const fmsg = imageUrl ? `${cleanMessage}\n\nAttached Image: ${imageUrl}` : cleanMessage;
+            const fmsg = mediaUrl ? `${cleanMessage}\n\nAttached Media: ${mediaUrl}` : cleanMessage;
             console.log(fmsg);
 
-            // Create or update ticket
-            if (!this.#threads[userNumber]) {
+            // Check if the user has an existing ticket and if it was created today
+            const today = new Date().toISOString().split('T')[0];
+            const userThread = this.#threads[userNumber];
+            const isNewDay = userThread ? userThread.lastUpdated !== today : true;
+
+            if (!userThread || isNewDay) {
+                // Create a new ticket for the user
                 const ticketId = await this.#createFreshdeskTicket(
                     { number: userNumber },
                     cleanMessage,
-                    imageUrl
+                    mediaUrl
                 );
                 if (ticketId) {
                     this.#threads[userNumber] = {
                         ticketId: ticketId,
                         originalQuestion: fmsg,
-                        jid: jid
+                        jid: jid,
+                        lastUpdated: today
                     };
                     this.#saveThreads();
                     await this.#sendMessage(sender, {
@@ -259,14 +271,16 @@ class HelpDesk {
                     });
                 }
             } else {
+                // Update the existing ticket
                 const updated = await this.#updateFreshdeskTicket(
-                    this.#threads[userNumber].ticketId,
+                    userThread.ticketId,
                     cleanMessage,
-                    imageUrl
+                    mediaUrl
                 );
                 if (updated) {
-                    this.#threads[userNumber].originalQuestion = fmsg;
-                    this.#threads[userNumber].jid = jid;
+                    userThread.originalQuestion = fmsg;
+                    userThread.jid = jid;
+                    userThread.lastUpdated = today;
                     this.#saveThreads();
                     await this.#sendMessage(sender, {
                         text: "✅ Your message has been added to the support ticket.",
