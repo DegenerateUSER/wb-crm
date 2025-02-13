@@ -14,10 +14,12 @@ const botConfig = {
       membersLimit: 1000,
       trigger: "TagAll",
     },
-      helpdesk:{
-          freshdeskApiKey: 'DWScglJjwy45DnZ8chd',
-          freshdeskDomain: 'gayroom',
-      },
+    helpdesk:{
+      freshdeskApiKey: 'DWScglJjwy45DnZ8chd',
+      freshdeskDomain: 'gayroom',
+      azureConnectionString: 'DefaultEndpointsProtocol=https;AccountName=testingedg;AccountKey=iI4EcWbT8UjF8dlGkkiBOLABU1GndwqzFJuOV3hJmIRd7BNbx8Cqm56oyiFs/RcKLPjbmqWlXGC9+ASt9a3sYg==;EndpointSuffix=core.windows.net',
+      azureContainerName: 'media-uploads'
+    },
     warner:{
       membersLimit: 1000,
       trigger: "chat.whatsapp"

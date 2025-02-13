@@ -1,27 +1,16 @@
 {
   "918700739666": {
-    "ticketId": 3323,
-    "originalQuestion": "work",
-    "jid": "120363369074116183@g.us"
-  },
-  "919429049629": {
-    "ticketId": 3324,
-    "originalQuestion": "shsjjahdh",
-    "jid": "120363377025556553@g.us"
-  },
-  "917588881106": {
-    "ticketId": 3325,
-    "originalQuestion": "what's the ticket number of sweeper refurbishment?",
-    "jid": "120363394170465921@g.us"
-  },
-  "919625336696": {
-    "ticketId": 3326,
-    "originalQuestion": "this is a testing message",
-    "jid": "120363369074116183@g.us"
-  },
-  "919313080550": {
-    "ticketId": 3327,
-    "originalQuestion": "test test test",
-    "jid": "120363369074116183@g.us"
+    "120363396560821263@g.us": {
+      "ticketId": 4,
+      "originalQuestion": "heelllo",
+      "lastResponse": "Hi 918700739666,ok do this sir",
+      "lastUpdated": "2025-02-13"
+    },
+    "120363402447425217@g.us": {
+      "ticketId": 5,
+      "originalQuestion": "hehehhe\n\nAttached Media: https://testingedg.blob.core.windows.net/media-uploads/media_1739457540276.mp4",
+      "lastResponse": "Hi 918700739666,hohoho",
+      "lastUpdated": "2025-02-13"
+    }
   }
 }
