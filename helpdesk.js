@@ -450,6 +450,19 @@ class HelpDesk {
         }
     }
 
+    async #getCustomerId(customerEmail) {
+        try {
+            const customerData = await axios.get(
+                `https://${this.#freshdeskConfig.domain}.freshdesk.com/api/v2/contacts?email=${customerEmail}`,
+                { auth: { username: this.#freshdeskConfig.apiKey, password: 'X' } }
+            );
+            return customerData.data[0]?.id;
+        } catch (error) {
+            console.error('Error fetching customer ID:', error);
+            return null;
+        }
+    }
+
     async #uploadMediaToAzure(mediaBuffer, mediaMimeType, mediaName) {
         if (!mediaBuffer || !mediaMimeType || !mediaName) {
             throw new Error('Missing required parameters for media upload');
@@ -476,14 +489,18 @@ class HelpDesk {
             throw new Error('User and message are required to create a ticket');
         }
 
+        const customerEmail = `${user.number}@whatsapp.com`;
+        const customerId = await this.#getCustomerId(customerEmail);
+
         const url = `https://${this.#freshdeskConfig.domain}.freshdesk.com/api/v2/tickets`;
         const data = {
             subject: `Query from ${user.name || user.number}`,
             description: mediaUrl ? `${message}\n\nAttached Media: ${mediaUrl}` : message,
-            email: `${user.number}@whatsapp.com`,
+            email: customerEmail,
             priority: 1,
             status: 2,
-            source: 3
+            source: 3,
+            requester_id: customerId // Add customer ID to the ticket
         };
 
         try {
@@ -499,14 +516,19 @@ class HelpDesk {
         }
     }
 
-    async #updateFreshdeskTicket(ticketId, message, mediaUrl) {
+    async #updateFreshdeskTicket(ticketId, message, mediaUrl, userNumber) {
         if (!ticketId || !message) {
             throw new Error('Ticket ID and message are required for update');
         }
 
+        const customerEmail = `${userNumber}@whatsapp.com`;
+        const customerId = await this.#getCustomerId(customerEmail);
+
         const url = `https://${this.#freshdeskConfig.domain}.freshdesk.com/api/v2/tickets/${ticketId}/notes`;
         const data = {
             body: mediaUrl ? `${message}\n\nAttached Media: ${mediaUrl}` : message,
+            // user_id: customerId, // Use customer ID to mark the reply as a customer response
+            // incoming: true,
             private: false
         };
 
@@ -637,6 +659,7 @@ class HelpDesk {
             if (!this.#threads[userNumber]) this.#threads[userNumber] = {};
             this.#threads[userNumber][groupId] = {
                 ticketId,
+                customerId: await this.#getCustomerId(`${userNumber}@whatsapp.com`), // Save customer ID
                 originalQuestion: formattedMessage,
                 lastResponse: null,
                 lastUpdated: new Date().toISOString().split('T')[0]
@@ -652,7 +675,8 @@ class HelpDesk {
         const updated = await this.#updateFreshdeskTicket(
             userThread.ticketId,
             cleanMessage,
-            mediaUrl
+            mediaUrl,
+            userNumber
         );
 
         if (updated) {
@@ -665,64 +689,68 @@ class HelpDesk {
         }
     }
 
-    async checkFreshdeskReplies(bot) {
-        for (const userNumber in this.#threads) {
-            for (const groupId in this.#threads[userNumber]) {
-                try {
-                    const thread = this.#threads[userNumber][groupId];
-                    const [ticket, conversations] = await Promise.all([
-                        this.#getFreshdeskTicket(thread.ticketId),
-                        this.#getFreshdeskConversations(thread.ticketId)
-                    ]);
+    async handleWebhook(req, res) {
+        const event = req.body;
+        const ticketId = event.ticket_id;
+        console.log(`Ticket ID: ${ticketId}`);
 
-                    if (!ticket) continue;
-
-                    const latestUpdates = conversations
-                        .filter(c => !c.private)
-                        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-                    if (latestUpdates.length > 0) {
-                        await this.#processLatestUpdate(latestUpdates[0], thread, userNumber, groupId);
-                    }
-
-                    if (ticket.status === 4 || ticket.status === 5) {
-                        delete this.#threads[userNumber][groupId];
-                        this.#saveThreads();
-                    }
-                } catch (error) {
-                    console.error(`Error processing updates for ${userNumber} in group ${groupId}:`, error);
-                }
+        try {
+            const ticket = await this.#getFreshdeskTicket(ticketId);
+            if (!ticket) {
+                return res.status(404).send('Ticket not found');
             }
+
+            const conversations = await this.#getFreshdeskConversations(ticketId);
+            console.log("got the text sir");
+            const latestUpdate = conversations
+                .filter(c => !c.private)
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+
+            if (latestUpdate) {
+                await this.#processLatestUpdate(latestUpdate, ticket, event);
+            }
+
+            res.status(200).send('Webhook processed');
+        } catch (error) {
+            console.error('Error processing webhook:', error);
+            res.status(500).send('Internal Server Error');
         }
     }
 
-    async #processLatestUpdate(lastUpdate, thread, userNumber, groupId) {
-        const plainText = lastUpdate.body.replace(/<[^>]+>/g, '').trim();
+    async #processLatestUpdate(latestUpdate, ticket, event) {
+        const plainText = latestUpdate.body.replace(/<[^>]+>/g, '').trim();
 
-        if (plainText.toLowerCase() === thread.lastResponse?.toLowerCase() ||
-            plainText.toLowerCase() === thread.originalQuestion?.toLowerCase()) {
-            return;
-        }
+        for (const userNumber in this.#threads) {
+            for (const groupId in this.#threads[userNumber]) {
+                const thread = this.#threads[userNumber][groupId];
+                if (thread.ticketId === ticket.id) {
+                    if (plainText.toLowerCase() === thread.lastResponse?.toLowerCase() ||
+                        plainText.toLowerCase() === thread.originalQuestion?.toLowerCase()) {
+                        return;
+                    }
 
-        const userJid = `${userNumber}@s.whatsapp.net`;
-        const formattedMessage = {
-            text: `🎫 Ticket #${thread.ticketId}\n👤 @${userNumber}\n\n${plainText}`,
-            mentions: [userJid]
-        };
+                    const userJid = `${userNumber}@s.whatsapp.net`;
+                    const formattedMessage = {
+                        text: `🎫 Ticket #${thread.ticketId}\n👤 @${userNumber}\n\n${plainText}`,
+                        mentions: [userJid]
+                    };
 
-        try {
-            if (groupId.includes('@g.us')) {
-                await this.#sendMessage(groupId, formattedMessage);
-                await this.#sendMessage(userJid, { text: plainText });
-            } else {
-                await this.#sendMessage(groupId, { text: plainText });
+                    try {
+                        if (groupId.includes('@g.us')) {
+                            await this.#sendMessage(groupId, formattedMessage);
+                            await this.#sendMessage(userJid, { text: plainText });
+                        } else {
+                            await this.#sendMessage(groupId, { text: plainText });
+                        }
+
+                        thread.lastResponse = plainText;
+                        this.#saveThreads();
+                    } catch (error) {
+                        console.error('Error sending message:', error);
+                        throw new Error('Failed to send message: ' + error.message);
+                    }
+                }
             }
-
-            thread.lastResponse = plainText;
-            this.#saveThreads();
-        } catch (error) {
-            console.error('Error sending message:', error);
-            throw new Error('Failed to send message: ' + error.message);
         }
     }
 }

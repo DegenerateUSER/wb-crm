@@ -15,8 +15,8 @@ const botConfig = {
       trigger: "TagAll",
     },
     helpdesk:{
-      freshdeskApiKey: 'DWScglJjwy45DnZ8chd',
-      freshdeskDomain: 'gayroom',
+      freshdeskApiKey: 'YD2wjGoH5Iu2XbR1WtC',
+      freshdeskDomain: 'brsgsc',
       azureConnectionString: 'DefaultEndpointsProtocol=https;AccountName=testingedg;AccountKey=iI4EcWbT8UjF8dlGkkiBOLABU1GndwqzFJuOV3hJmIRd7BNbx8Cqm56oyiFs/RcKLPjbmqWlXGC9+ASt9a3sYg==;EndpointSuffix=core.windows.net',
       azureContainerName: 'media-uploads'
     },

@@ -159,10 +159,12 @@ class Bot {
 
 module.exports = Bot;*/
 
+const express = require('express');
+const bodyParser = require('body-parser');
 const makeWASocket = require("@whiskeysockets/baileys").default;
 const { DisconnectReason, useMultiFileAuthState } = require("@whiskeysockets/baileys");
 const P = require("pino");
-const HelpDesk = require("./helpdesk"); // Import the HelpDesk class
+const HelpDesk = require("./helpdesk");
 
 class Bot {
   #socket;
@@ -183,11 +185,31 @@ class Bot {
 
     // Initialize HelpDesk
     this.#helpDesk = new HelpDesk({
-      membersLimit:   100,
-      trigger:  "!ask",
-      freshdeskApiKey: config.freshdeskApiKey || 'DWScglJjwy45DnZ8chd',
-      freshdeskDomain: config.freshdeskDomain || 'gayroom',
+      membersLimit: 100,
+      trigger: "!ask",
+      freshdeskApiKey: config.freshdeskApiKey || 'YD2wjGoH5Iu2XbR1WtC',
+      freshdeskDomain: config.freshdeskDomain || 'brsgsc',
       threadsDB: config.threadsDB || "threads.json"
+    });
+
+    // Initialize Express server for webhooks
+    this.#initWebhookServer();
+  }
+  #initWebhookServer() {
+    const app = express();
+    app.use(bodyParser.json());
+
+    app.post('/freshdesk-webbook', (req, res) => {
+      const payload = req.body;
+
+      console.log('Received webhook payload:', payload);
+      this.#helpDesk.handleWebhook(req, res);
+
+    });
+
+    const port = process.env.PORT || 3000;
+    app.listen(port, () => {
+      console.log(`Webhook server running on port ${port}`);
     });
   }
 
@@ -259,10 +281,7 @@ class Bot {
     });
 
     // Check Freshdesk Replies Every 2 Minutes
-    setInterval(async () => {
-       // Better to use environment variable
-      await this.#helpDesk.checkFreshdeskReplies(this.#socket);
-    },  20 * 1000); //10 sec
+    //10 sec
   }
 
   async #restart() {
